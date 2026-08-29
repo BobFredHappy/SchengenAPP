@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>90/180 Ledger (OneDrive sync)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
+<style>
+  :root {
+    --navy: #12203a; --card: #182a4a; --border: #3a4c6f; --cream: #f4efe1;
+    --muted: #8fa0bd; --dim: #5c6f91; --red: #c0503f; --red-soft: #3a1f1c;
+    --green: #8fb89c; --gold: #e0b768; --red-text: #e07a68;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--navy); color:#eae4d3; font-family:system-ui,-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
+  .display { font-family:'Fraunces',serif; } .mono { font-family:'IBM Plex Mono',monospace; }
+  .wrap { max-width:720px; margin:0 auto; padding:20px 20px 40px; }
+  header { border-bottom:1px solid var(--border); padding:24px 20px; margin-bottom:8px; }
+  header .inner { max-width:720px; margin:0 auto; display:flex; align-items:center; gap:12px; }
+  h1 { font-size:26px; font-weight:600; color:var(--cream); margin:0; letter-spacing:-0.01em; }
+  .eyebrow { font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--muted); margin:2px 0 0; }
+  .card { border-radius:2px; border:1px solid var(--border); background:var(--card); padding:20px; margin-bottom:24px; }
+  .card.over { border-color:var(--red); background:var(--red-soft); }
+  .status-row { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; align-items:baseline; }
+  .label { font-size:11px; text-transform:uppercase; letter-spacing:0.12em; color:var(--muted); }
+  .big { font-size:40px; font-weight:600; color:var(--cream); margin-top:4px; }
+  .big small { font-size:16px; font-weight:400; color:var(--muted); }
+  .mid { font-size:22px; font-weight:600; margin-top:4px; }
+  .note { font-size:13px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border); }
+  .note.warn { color:var(--red-text); border-top-color:rgba(192,80,63,0.4); }
+  .note.caution { color:var(--gold); } .note.dim { color:var(--muted); }
+  h2 { font-family:'Fraunces',serif; font-size:18px; color:var(--cream); margin:0 0 4px; font-weight:600; }
+  .subtext { font-size:12px; color:var(--muted); margin:0 0 12px; line-height:1.5; }
+  #chartWrap { position:relative; margin-bottom:28px; }
+  #chartSvg { width:100%; height:240px; display:block; touch-action:pan-y; }
+  #tooltip { position:absolute; pointer-events:none; opacity:0; transition:opacity 0.1s; background:var(--card); border:1px solid var(--border); border-radius:2px; padding:6px 9px; font-size:11px; white-space:nowrap; transform:translate(-50%,-110%); }
+  #tooltip .d { color:var(--cream); font-weight:600; } #tooltip .u { color:var(--green); margin-top:1px; } #tooltip .r { margin-top:1px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+  .grid .full { grid-column:1 / -1; }
+  label span { display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); margin-bottom:4px; }
+  input[type=date], input[type=text] { width:100%; background:var(--card); border:1px solid var(--border); border-radius:2px; padding:9px 8px; color:var(--cream); font-size:14px; font-family:'IBM Plex Mono',monospace; }
+  input[type=text] { font-family:system-ui,sans-serif; }
+  input::placeholder { color:var(--dim); }
+  button { font-family:inherit; cursor:pointer; }
+  .btn-add { width:100%; background:var(--red); color:var(--cream); border:none; border-radius:2px; padding:10px; font-size:14px; font-weight:500; display:flex; align-items:center; justify-content:center; gap:6px; }
+  .btn-add:disabled { opacity:0.4; }
+  .err { color:var(--red-text); font-size:12px; margin-top:6px; font-family:'IBM Plex Mono',monospace; }
+  ul.triplist { list-style:none; margin:0; padding:0; border:1px solid var(--border); border-radius:2px; overflow:hidden; }
+  ul.triplist li { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 14px; background:var(--card); border-bottom:1px solid var(--border); }
+  ul.triplist li:last-child { border-bottom:none; }
+  .trip-date { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--cream); }
+  .trip-date .n { color:var(--muted); }
+  .tag { margin-left:8px; font-size:9px; text-transform:uppercase; letter-spacing:0.1em; color:var(--gold); border:1px solid rgba(224,183,104,0.5); border-radius:2px; padding:1px 5px; }
+  .trip-label { font-size:12px; color:var(--muted); margin-top:2px; }
+  .del-btn { background:none; border:none; color:var(--dim); padding:4px; }
+  .empty { border:1px dashed var(--border); border-radius:2px; padding:24px; text-align:center; color:var(--muted); font-size:13px; font-family:'IBM Plex Mono',monospace; }
+  details { border:1px solid var(--border); border-radius:2px; margin-bottom:20px; }
+  summary { padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); cursor:pointer; list-style:none; display:flex; justify-content:space-between; }
+  summary::-webkit-details-marker { display:none; }
+  .backup-body { padding:0 14px 14px; border-top:1px solid var(--border); padding-top:14px; }
+  textarea { width:100%; background:var(--card); border:1px solid var(--border); border-radius:2px; color:var(--cream); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:8px; }
+  textarea[readonly] { background:#0f1c33; color:var(--muted); }
+  .row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .small-btn { font-size:11px; border-radius:2px; padding:5px 9px; background:transparent; }
+  .small-btn.green { color:var(--green); border:1px solid rgba(143,184,156,0.5); }
+  .small-btn.muted { color:var(--muted); border:1px solid var(--border); }
+  .small-btn.filled { color:var(--cream); background:var(--border); border:none; margin-top:8px; }
+  .small-btn.filled:disabled { opacity:0.4; }
+  .foot { font-size:11px; line-height:1.6; color:var(--dim); border-top:1px solid var(--border); padding-top:16px; }
+
+  /* auth / sync UI */
+  .sync-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border:1px solid var(--border); border-radius:2px; margin-bottom:20px; font-size:12px; }
+  .sync-bar.signedout { border-color:var(--gold); }
+  .sync-bar.error { border-color:var(--red); }
+  .sync-dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .sync-dot.ok { background:var(--green); } .sync-dot.warn { background:var(--gold); } .sync-dot.bad { background:var(--red); }
+  .sign-btn { background:var(--red); color:var(--cream); border:none; border-radius:2px; padding:7px 12px; font-size:12px; font-weight:500; }
+  .setup-screen { max-width:560px; margin:60px auto; padding:24px; }
+  .setup-screen code { background:var(--card); padding:1px 5px; border-radius:2px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c0503f" stroke-width="1.75"><path d="M4 21h16M8 21V9a4 4 0 118 0v12M12 9V3"/></svg>
+    <div>
+      <h1>90/180 ledger</h1>
+      <p class="eyebrow">Schengen short-stay allowance · synced via OneDrive</p>
+    </div>
+  </div>
+</header>
+
+<div id="setupScreen" class="setup-screen" style="display:none">
+  <h2>Not configured yet</h2>
+  <p class="subtext">This copy needs a Microsoft app Client ID before it can sign in and sync to
+    OneDrive. Open <code>index.html</code> in your GitHub repo and set the <code>CLIENT_ID</code>
+    value near the top of the script tag to the "Application (client) ID" from your Azure app
+    registration, then reload this page.</p>
+</div>
+
+<div id="appRoot" class="wrap" style="display:none">
+  <div id="syncBar" class="sync-bar">
+    <span id="syncStatus"><span class="sync-dot warn"></span>Not signed in</span>
+    <button id="signBtn" class="sign-btn">Sign in with Microsoft</button>
+  </div>
+
+  <div id="statusCard" class="card">
+    <div class="status-row">
+      <div>
+        <div class="label" id="asOf"></div>
+        <div class="big"><span id="remaining"></span><small> / 90 days left</small></div>
+      </div>
+      <div style="text-align:right">
+        <div class="label">Used in trailing 180 days</div>
+        <div class="mid" id="usedDisplay"></div>
+      </div>
+    </div>
+    <div id="statusNote"></div>
+  </div>
+
+  <div>
+    <h2>Rolling allowance</h2>
+    <p class="subtext">Days used in the trailing 180-day window. Solid = actual, so far;
+      dashed = projected from planned trips. Extends until usage runs off back to zero
+      (180 days after your last logged day), capped at a year out.</p>
+    <div id="chartWrap">
+      <svg id="chartSvg" viewBox="0 0 800 240" preserveAspectRatio="none"></svg>
+      <div id="tooltip"><div class="d"></div><div class="u"></div><div class="r"></div></div>
+    </div>
+  </div>
+
+  <div>
+    <h2>Log a trip</h2>
+    <p class="subtext">Past trips and planned future trips both go here. Saved to OneDrive
+      automatically once you're signed in.</p>
+    <div class="grid">
+      <label><span>Entry</span><input type="date" id="startInput" /></label>
+      <label><span>Exit</span><input type="date" id="endInput" /></label>
+      <label class="full"><span>Note (optional)</span><input type="text" id="labelInput" placeholder="e.g. Umbria viewing trip" /></label>
+    </div>
+    <button class="btn-add" id="addBtn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Add
+    </button>
+    <div class="err" id="formErr"></div>
+  </div>
+
+  <div>
+    <h2>Trip log <span id="tripCount" style="color:var(--muted);font-size:14px;font-weight:400"></span></h2>
+    <div id="tripListWrap"></div>
+  </div>
+
+  <div id="syncErr" class="err" style="display:none;margin-bottom:14px;"></div>
+
+  <details id="backupDetails">
+    <summary><span>Backup &amp; restore (local, in addition to OneDrive)</span><span id="backupToggleIcon">+</span></summary>
+    <div class="backup-body">
+      <div style="margin-bottom:16px">
+        <div class="row">
+          <span class="label">Export current trips</span>
+          <div style="display:flex;gap:8px">
+            <button class="small-btn green" id="copyBtn">Copy</button>
+            <button class="small-btn muted" id="downloadBtn">Download .json</button>
+          </div>
+        </div>
+        <textarea id="exportArea" rows="4" readonly></textarea>
+      </div>
+      <div>
+        <span class="label">Restore from pasted backup</span>
+        <textarea id="importArea" rows="4" placeholder="Paste previously exported JSON here" style="margin-top:6px"></textarea>
+        <button class="small-btn filled" id="importBtn" disabled>Restore &amp; sync to OneDrive</button>
+        <div class="err" id="importErr"></div>
+        <div class="note dim" id="importOk" style="display:none;border:none;padding:0;margin-top:8px">Trips restored.</div>
+      </div>
+    </div>
+  </details>
+
+  <p class="foot">
+    Both entry and exit day count as days present, per the standard EU short-stay rule.
+    This tracks calendar presence only — it doesn't know your passport, visa status, or
+    which trips were exempt. Treat it as a planning aid, not an authority. Trip data is
+    stored in a private app folder in your OneDrive (Apps/&lt;this app's name&gt;), not
+    visible to other apps, and not sent to Anthropic.
+  </p>
+</div>
+
+<script>
+"use strict";
+
+// ============================================================
+// CONFIGURATION — fill these in from your Azure app registration
+// ============================================================
+const CLIENT_ID = "PASTE-YOUR-CLIENT-ID-HERE";
+// Use "consumers" if you picked "Personal Microsoft accounts only" during
+// registration, or "common" if you picked the broader option supporting
+// both personal and work/school accounts.
+const AUTHORITY_SEGMENT = "consumers";
+// ============================================================
+
+if (!CLIENT_ID || CLIENT_ID.indexOf("PASTE-YOUR") === 0) {
+  document.getElementById("setupScreen").style.display = "block";
+} else {
+  document.getElementById("appRoot").style.display = "block";
+  initApp();
+}
+
+function initApp() {
+  const msalConfig = {
+    auth: {
+      clientId: CLIENT_ID,
+      authority: "https://login.microsoftonline.com/" + AUTHORITY_SEGMENT,
+      redirectUri: window.location.origin + window.location.pathname,
+    },
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+  };
+  const msalInstance = new msal.PublicClientApplication(msalConfig);
+  const SCOPES = ["Files.ReadWrite.AppFolder"];
+  const GRAPH_URL = "https://graph.microsoft.com/v1.0/me/drive/special/approot:/trips.json:/content";
+
+  // ---------- date helpers ----------
+  const toDate = (s) => new Date(s + "T00:00:00");
+  const isoDate = (d) => d.toISOString().slice(0, 10);
+  const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+  const daysBetween = (a, b) => Math.round((b - a) / 86400000);
+  const todayISO = isoDate(new Date());
+  const fmtShort = (d) => d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  const fmtChart = (d) => d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+
+  let trips = [];
+  let account = null;
+  let syncing = false;
+
+  // ---------- auth ----------
+  async function trySilentSignIn() {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      account = accounts[0];
+      await afterSignIn();
+    }
+  }
+
+  document.getElementById("signBtn").addEventListener("click", async () => {
+    try {
+      const result = await msalInstance.loginPopup({ scopes: SCOPES });
+      account = result.account;
+      await afterSignIn();
+    } catch (e) {
+      setSyncBar("error", "Sign-in failed: " + describeError(e));
+    }
+  });
+
+  async function afterSignIn() {
+    setSyncBar("ok-signed-in", "Signed in as " + (account.username || account.name));
+    document.getElementById("signBtn").textContent = "Sign out";
+    document.getElementById("signBtn").onclick = async () => {
+      await msalInstance.logoutPopup();
+      account = null;
+      window.location.reload();
+    };
+    await loadFromOneDrive();
+  }
+
+  async function getToken() {
+    try {
+      const result = await msalInstance.acquireTokenSilent({ scopes: SCOPES, account });
+      return result.accessToken;
+    } catch (e) {
+      const result = await msalInstance.acquireTokenPopup({ scopes: SCOPES });
+      return result.accessToken;
+    }
+  }
+
+  function describeError(e) {
+    if (!e) return "unknown error";
+    return (e.errorCode || e.name || "") + " " + (e.errorMessage || e.message || "");
+  }
+
+  function setSyncBar(state, text) {
+    const bar = document.getElementById("syncBar");
+    const status = document.getElementById("syncStatus");
+    bar.className = "sync-bar" + (state === "error" ? " error" : state === "signed-out" ? " signedout" : "");
+    const dotClass = state === "ok-signed-in" ? "ok" : state === "error" ? "bad" : "warn";
+    status.innerHTML = '<span class="sync-dot ' + dotClass + '"></span>' + text;
+  }
+
+  // ---------- OneDrive read/write ----------
+  async function loadFromOneDrive() {
+    syncing = true;
+    setSyncBar("ok-signed-in", "Syncing…");
+    try {
+      const token = await getToken();
+      const res = await fetch(GRAPH_URL, { headers: { Authorization: "Bearer " + token } });
+      if (res.status === 404) {
+        trips = []; // first run, no file yet
+      } else if (res.ok) {
+        trips = await res.json();
+      } else {
+        throw new Error("Graph GET failed: " + res.status + " " + res.statusText);
+      }
+      setSyncBar("ok-signed-in", "Synced with OneDrive · " + nowTime());
+      document.getElementById("syncErr").style.display = "none";
+    } catch (e) {
+      setSyncBar("error", "Sync error — showing last known data");
+      document.getElementById("syncErr").style.display = "block";
+      document.getElementById("syncErr").innerHTML =
+        "Couldn't load from OneDrive. <div style='color:var(--gold);margin-top:4px'>Detail: " + describeError(e) + "</div>";
+    }
+    syncing = false;
+    render();
+  }
+
+  async function saveToOneDrive() {
+    setSyncBar("ok-signed-in", "Saving…");
+    try {
+      const token = await getToken();
+      const res = await fetch(GRAPH_URL, {
+        method: "PUT",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify(trips),
+      });
+      if (!res.ok) throw new Error("Graph PUT failed: " + res.status + " " + res.statusText);
+      setSyncBar("ok-signed-in", "Synced with OneDrive · " + nowTime());
+      document.getElementById("syncErr").style.display = "none";
+    } catch (e) {
+      setSyncBar("error", "Save failed — this change may not have synced");
+      document.getElementById("syncErr").style.display = "block";
+      document.getElementById("syncErr").innerHTML =
+        "Couldn't save to OneDrive. <div style='color:var(--gold);margin-top:4px'>Detail: " + describeError(e) +
+        "</div><div style='color:var(--dim);margin-top:4px'>Use Backup &amp; restore below to keep a manual copy for now.</div>";
+    }
+  }
+
+  function nowTime() {
+    return new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // ---------- calculation (same rule set as the other versions) ----------
+  function computeCalc() {
+    if (trips.length === 0) {
+      return { chartData: [], today: { used: 0, remaining: 90 }, firstOverstay: null, nextClearDate: null };
+    }
+    const starts = trips.map((t) => toDate(t.start));
+    const ends = trips.map((t) => toDate(t.end));
+    const today = toDate(todayISO);
+    const earliest = new Date(Math.min(...starts, today.getTime()));
+    const latest = new Date(Math.max(...ends, today.getTime()));
+    const rangeStart = new Date(Math.min(addDays(earliest, -14).getTime(), addDays(today, -190).getTime()));
+    const MAX_HORIZON = 365;
+    const rangeEnd = new Date(Math.min(addDays(latest, 180).getTime(), addDays(today, MAX_HORIZON).getTime()));
+    const extStart = addDays(rangeStart, -179);
+    const totalDays = daysBetween(extStart, rangeEnd) + 1;
+
+    const presence = new Uint8Array(totalDays);
+    for (const t of trips) {
+      let d = toDate(t.start);
+      const end = toDate(t.end);
+      while (d <= end) {
+        const idx = daysBetween(extStart, d);
+        if (idx >= 0 && idx < totalDays) presence[idx] = 1;
+        d = addDays(d, 1);
+      }
+    }
+    const prefix = new Int32Array(totalDays + 1);
+    for (let i = 0; i < totalDays; i++) prefix[i + 1] = prefix[i] + presence[i];
+
+    const chartData = [];
+    const overstayDays = [];
+    const chartStartIdx = daysBetween(extStart, rangeStart);
+    const chartEndIdx = daysBetween(extStart, rangeEnd);
+    let todayUsed = 0;
+
+    for (let idx = chartStartIdx; idx <= chartEndIdx; idx++) {
+      const windowStartIdx = Math.max(0, idx - 179);
+      const used = prefix[idx + 1] - prefix[windowStartIdx];
+      const d = addDays(extStart, idx);
+      const iso = isoDate(d);
+      const isFuture = iso >= todayISO;
+      chartData.push({ date: iso, used, isFuture, remaining: 90 - used });
+      if (used > 90) overstayDays.push(iso);
+      if (iso === todayISO) todayUsed = used;
+    }
+
+    let nextClearDate = null;
+    if (todayUsed > 90) {
+      const fromToday = chartData.filter((r) => r.date >= todayISO);
+      const clear = fromToday.find((r) => r.used <= 90);
+      nextClearDate = clear ? clear.date : null;
+    }
+    const firstOverstay = overstayDays.find((d) => d >= todayISO) || null;
+    return { chartData, today: { used: todayUsed, remaining: 90 - todayUsed }, firstOverstay, nextClearDate };
+  }
+
+  // ---------- rendering ----------
+  let scaleFns = null;
+
+  function render() {
+    const calc = computeCalc();
+    renderStatus(calc);
+    renderChart(calc);
+    renderTripList();
+    document.getElementById("exportArea").value = JSON.stringify(trips, null, 2);
+  }
+
+  function renderStatus(calc) {
+    document.getElementById("asOf").textContent = "As of today · " + fmtShort(toDate(todayISO));
+    const remaining = calc.today.remaining < 0 ? 0 : calc.today.remaining;
+    document.getElementById("remaining").textContent = remaining;
+    document.getElementById("usedDisplay").textContent = calc.today.used + " days";
+    const overLimit = calc.today.used > 90;
+    document.getElementById("statusCard").className = "card" + (overLimit ? " over" : "");
+    document.getElementById("usedDisplay").style.color = overLimit ? "var(--red-text)" : "var(--green)";
+
+    let noteHtml = "";
+    if (overLimit) {
+      noteHtml = '<div class="note warn">Over the limit today — ' + (calc.today.used - 90) +
+        (calc.today.used - 90 === 1 ? " day" : " days") + " past the 90-day ceiling.";
+      if (calc.nextClearDate) noteHtml += " Clears on <strong style='color:var(--cream)'>" + fmtShort(toDate(calc.nextClearDate)) + "</strong>.";
+      noteHtml += "</div>";
+    } else if (calc.firstOverstay) {
+      noteHtml = '<div class="note caution">Fine today, but your planned trips push you over the limit from <strong style="color:var(--cream)">' +
+        fmtShort(toDate(calc.firstOverstay)) + "</strong> onward.</div>";
+    } else if (trips.length === 0) {
+      noteHtml = '<div class="note dim">Log entry and exit dates below — past trips and future plans both count.</div>';
+    }
+    document.getElementById("statusNote").innerHTML = noteHtml;
+  }
+
+  function renderChart(calc) {
+    const svg = document.getElementById("chartSvg");
+    const data = calc.chartData;
+    if (data.length === 0) { svg.innerHTML = ""; scaleFns = null; return; }
+    const W = 800, H = 240, padL = 30, padR = 10, padT = 14, padB = 24;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const n = data.length;
+    const maxUsed = Math.max(90, ...data.map((r) => r.used)) + 5;
+    const xScale = (i) => padL + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+    const yScale = (v) => padT + (1 - v / maxUsed) * plotH;
+    scaleFns = { xScale, yScale, data, plotW, padL, n };
+
+    const todayIdx = data.findIndex((r) => r.date === todayISO);
+    const pastPts = data.slice(0, todayIdx);
+    const futurePts = data.slice(todayIdx);
+    const pathFor = (pts, offset) => pts.map((r, i) => (i === 0 ? "M" : "L") + xScale(i + offset) + "," + yScale(r.used)).join(" ");
+    const pastPath = pastPts.length > 1 ? pathFor(pastPts, 0) : "";
+    const futurePath = futurePts.length > 1 ? pathFor(futurePts, todayIdx) : "";
+
+    const tickCount = 5;
+    let ticks = [];
+    for (let k = 0; k < tickCount; k++) ticks.push(Math.round((k / (tickCount - 1)) * (n - 1)));
+    ticks = [...new Set(ticks)];
+
+    let svgEls = "";
+    [0, 25, 50, 75].forEach((v) => {
+      if (v > maxUsed) return;
+      const y = yScale(v);
+      svgEls += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#2a3a5a" stroke-dasharray="2 4" />`;
+      svgEls += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="10" font-family="IBM Plex Mono, monospace" fill="#5c6f91">${v}</text>`;
+    });
+    const y90 = yScale(90);
+    svgEls += `<line x1="${padL}" y1="${y90}" x2="${W - padR}" y2="${y90}" stroke="#c0503f" stroke-dasharray="4 3" />`;
+    svgEls += `<text x="${W - padR}" y="${y90 - 4}" text-anchor="end" font-size="10" font-family="IBM Plex Mono, monospace" fill="#c0503f">90</text>`;
+    const xToday = xScale(todayIdx);
+    svgEls += `<line x1="${xToday}" y1="${padT}" x2="${xToday}" y2="${H - padB}" stroke="#e0b768" stroke-width="1" />`;
+    svgEls += `<text x="${xToday}" y="${padT + 10}" text-anchor="end" font-size="10" font-family="IBM Plex Mono, monospace" fill="#e0b768">today</text>`;
+    ticks.forEach((idx) => {
+      svgEls += `<text x="${xScale(idx)}" y="${H - padB + 16}" text-anchor="middle" font-size="10" font-family="IBM Plex Mono, monospace" fill="#5c6f91">${fmtChart(toDate(data[idx].date))}</text>`;
+    });
+    if (pastPath) svgEls += `<path d="${pastPath}" fill="none" stroke="#8fb89c" stroke-width="2" />`;
+    if (futurePath) svgEls += `<path d="${futurePath}" fill="none" stroke="#8fb89c" stroke-width="2" stroke-dasharray="5 4" />`;
+    svgEls += `<line id="guideLine" x1="0" y1="${padT}" x2="0" y2="${H - padB}" stroke="#5c6f91" stroke-width="1" opacity="0" />`;
+    svgEls += `<circle id="guideDot" r="3.5" fill="#f4efe1" opacity="0" />`;
+    svgEls += `<rect x="${padL}" y="0" width="${plotW}" height="${H}" fill="transparent" id="captureRect" />`;
+    svg.innerHTML = svgEls;
+    attachChartInteraction();
+  }
+
+  function attachChartInteraction() {
+    const svg = document.getElementById("chartSvg");
+    const rect = document.getElementById("captureRect");
+    const tooltip = document.getElementById("tooltip");
+    const guideLine = document.getElementById("guideLine");
+    const guideDot = document.getElementById("guideDot");
+    if (!rect || !scaleFns) return;
+    function handle(clientX) {
+      const box = svg.getBoundingClientRect();
+      const svgX = ((clientX - box.left) / box.width) * 800;
+      const relX = svgX - scaleFns.padL;
+      let idx = Math.round((relX / scaleFns.plotW) * (scaleFns.n - 1));
+      idx = Math.max(0, Math.min(scaleFns.n - 1, idx));
+      const row = scaleFns.data[idx];
+      const x = scaleFns.xScale(idx), y = scaleFns.yScale(row.used);
+      guideLine.setAttribute("x1", x); guideLine.setAttribute("x2", x); guideLine.setAttribute("opacity", "1");
+      guideDot.setAttribute("cx", x); guideDot.setAttribute("cy", y); guideDot.setAttribute("opacity", "1");
+      const box2 = svg.getBoundingClientRect();
+      const pxX = box2.left + (x / 800) * box2.width, pxY = box2.top + (y / 240) * box2.height;
+      tooltip.style.left = (pxX - svg.parentElement.getBoundingClientRect().left) + "px";
+      tooltip.style.top = (pxY - svg.parentElement.getBoundingClientRect().top) + "px";
+      tooltip.style.opacity = "1";
+      tooltip.querySelector(".d").textContent = fmtShort(toDate(row.date));
+      tooltip.querySelector(".u").textContent = row.used + " used" + (row.isFuture ? " (projected)" : "");
+      const r = tooltip.querySelector(".r");
+      r.textContent = row.remaining + " remaining";
+      r.style.color = row.remaining < 0 ? "#e07a68" : "#e0b768";
+    }
+    rect.addEventListener("mousemove", (e) => handle(e.clientX));
+    rect.addEventListener("mousedown", (e) => handle(e.clientX));
+    rect.addEventListener("touchstart", (e) => handle(e.touches[0].clientX), { passive: true });
+    rect.addEventListener("touchmove", (e) => { handle(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
+  }
+
+  function renderTripList() {
+    const wrap = document.getElementById("tripListWrap");
+    document.getElementById("tripCount").textContent = trips.length > 0 ? "(" + trips.length + ")" : "";
+    if (trips.length === 0) {
+      wrap.innerHTML = '<div class="empty">No trips logged yet. Add past Schengen trips and any planned ones.</div>';
+      return;
+    }
+    const sorted = [...trips].sort((a, b) => (a.start < b.start ? -1 : 1));
+    wrap.innerHTML = '<ul class="triplist">' + sorted.map((t) => {
+      const nights = daysBetween(toDate(t.start), toDate(t.end)) + 1;
+      const isFuture = t.start > todayISO;
+      return "<li>" +
+        '<div><div class="trip-date">' + fmtShort(toDate(t.start)) + " &rarr; " + fmtShort(toDate(t.end)) +
+        '<span class="n"> · ' + nights + "d</span>" + (isFuture ? '<span class="tag">planned</span>' : "") + "</div>" +
+        (t.label ? '<div class="trip-label">' + escapeHtml(t.label) + "</div>" : "") + "</div>" +
+        '<button class="del-btn" data-id="' + t.id + '" aria-label="Delete trip">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>' +
+        "</button></li>";
+    }).join("") + "</ul>";
+    wrap.querySelectorAll(".del-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        trips = trips.filter((t) => t.id !== btn.dataset.id);
+        render();
+        await saveToOneDrive();
+      });
+    });
+  }
+
+  function escapeHtml(s) { const div = document.createElement("div"); div.textContent = s; return div.innerHTML; }
+
+  // ---------- form ----------
+  const startInput = document.getElementById("startInput");
+  const endInput = document.getElementById("endInput");
+  const labelInput = document.getElementById("labelInput");
+  const formErr = document.getElementById("formErr");
+
+  startInput.addEventListener("change", () => {
+    if (!endInput.value || endInput.value === startInput.dataset.prevStart) endInput.value = startInput.value;
+    endInput.min = startInput.value;
+    startInput.dataset.prevStart = startInput.value;
+  });
+
+  document.getElementById("addBtn").addEventListener("click", async () => {
+    formErr.textContent = "";
+    const start = startInput.value, end = endInput.value, label = labelInput.value.trim();
+    if (!start || !end) { formErr.textContent = "Enter both an entry and exit date."; return; }
+    if (toDate(end) < toDate(start)) { formErr.textContent = "Exit date is before entry date."; return; }
+    trips.push({ id: uid(), start, end, label });
+    startInput.value = ""; endInput.value = ""; labelInput.value = ""; endInput.min = "";
+    render();
+    await saveToOneDrive();
+  });
+
+  // ---------- backup / restore (local, on top of OneDrive) ----------
+  document.getElementById("copyBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("copyBtn");
+    try {
+      await navigator.clipboard.writeText(document.getElementById("exportArea").value);
+      btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1500);
+    } catch (e) { document.getElementById("importErr").textContent = "Couldn't copy automatically — select the text and copy manually."; }
+  });
+
+  document.getElementById("downloadBtn").addEventListener("click", () => {
+    const blob = new Blob([document.getElementById("exportArea").value], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "schengen-trips-" + todayISO + ".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+
+  const importArea = document.getElementById("importArea");
+  const importBtn = document.getElementById("importBtn");
+  importArea.addEventListener("input", () => { importBtn.disabled = !importArea.value.trim(); });
+
+  importBtn.addEventListener("click", async () => {
+    const importErr = document.getElementById("importErr");
+    const importOk = document.getElementById("importOk");
+    importErr.textContent = ""; importOk.style.display = "none";
+    let parsed;
+    try { parsed = JSON.parse(importArea.value); }
+    catch (e) { importErr.textContent = "That's not valid JSON — paste the exact text you exported earlier."; return; }
+    if (!Array.isArray(parsed)) { importErr.textContent = "Expected a list of trips (an array)."; return; }
+    const valid = parsed.every((t) => t && typeof t.start === "string" && typeof t.end === "string");
+    if (!valid) { importErr.textContent = "Some entries are missing a start or end date."; return; }
+    trips = parsed.map((t) => ({ id: t.id || uid(), start: t.start, end: t.end, label: t.label || "" }));
+    importOk.style.display = "block"; importArea.value = "";
+    render();
+    await saveToOneDrive();
+  });
+
+  document.getElementById("backupDetails").addEventListener("toggle", (e) => {
+    document.getElementById("backupToggleIcon").textContent = e.target.open ? "\u2212" : "+";
+  });
+
+  // ---------- init ----------
+  render();
+  setSyncBar("signed-out", "Not signed in");
+  trySilentSignIn();
+  window.addEventListener("resize", () => { if (scaleFns) renderChart(computeCalc()); });
+}
+</script>
+</body>
+</html>
